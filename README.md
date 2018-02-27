@@ -1,7 +1,10 @@
-# Mongo2ES meteor package
+# mongo-to-elastic meteor package
 
-This is standalone package which you can use inside your meteor app, to sync MongoDB to ElasticSearch.
+git clone git@github.com:settlin/mongo-to-elastic.git
 
-Install this package with ```meteor add alino:mongo2es```
+```
+node index.js /path/to/config.js
+```
 
-For more information about Mongo2ES visit https://github.com/Alino/Mongo2ES
+See [a relative link](config-example.js) for details.
+

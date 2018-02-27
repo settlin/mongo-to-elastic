@@ -1,0 +1,34 @@
+{
+  "name": "mongo-to-elastic",
+  "version": "1.0.0",
+  "description": "This is standalone package which you can use inside your meteor app, to sync MongoDB to ElasticSearch.",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "tests"
+  },
+  "scripts": {
+    "sync": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/settlin/mongoToElastic.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/settlin/mongoToElastic/issues"
+  },
+  "homepage": "https://github.com/settlin/mongoToElastic#readme",
+  "dependencies": {
+    "config": "^1.29.4",
+    "elasticsearch": "^14.1.0",
+    "mongo-oplog": "^2.1.0",
+    "mongodb": "^3.0.3"
+  },
+  "devDependencies": {
+    "babel-eslint": "^8.2.2",
+    "eslint": "^4.18.1"
+  }
+}
