@@ -64,11 +64,15 @@ async function sync(db, ec, collection) {
 	// new docs
 	let query = cnt === 1 && resync ? {} : till.createdAt ? {[cKey]: {$gt: new Date(till.createdAt)}} : {};
 	let docs = await db.collection(c.name).find(query).limit(mongo.limit || 1000).toArray();
+	console.debug('query', query);
+	console.debug('number of docs', docs.length);
 	if (docs.length) {
 		console.log('Fetching ' + c.name + '. Iteration: ' + cnt + '. Docs: ' + docs.length);
 		const body = docs.reduce((x, d) => ([...x, {create: {_id: d._id}}, {...(c.transform || transform)(deleteId(d))}]), []);
 		const createdAt = body[body.length - 1][cKey];
+		console.debug('bulk insert');
 		await ec.bulk({index, type: 't', body});
+		console.debug('update timestamp in the elastic\'s syncDataIndex');
 		await ec.update({index: esIndex, type: esIndex, id: c.name, body: {
 			script: {
 				inline: 'ctx._source.createdAt = params.createdAt; if (!params.collectionIndExists) ctx._source.updatedAt = params.createdAt',
@@ -78,6 +82,7 @@ async function sync(db, ec, collection) {
 		}});
 		if (createdAt < new Date()) {
 			cnt++;
+			console.debug('fetching more data');
 			await sync(db, ec, collection);
 			return;
 		}
@@ -86,6 +91,7 @@ async function sync(db, ec, collection) {
 
 	// updated docs
 	if (!statusDocExists) return;
+	console.debug('updating documents');
 	cnt = 1;
 	const uKey = c.updatedAtKey || 'updatedAt';
 	statusDoc = await ec.get({index: esIndex, type: esIndex, id: c.name});
@@ -93,11 +99,15 @@ async function sync(db, ec, collection) {
 
 	query = till.updatedAt ? {[uKey]: {$gt: new Date(till.updatedAt)}} : {};
 	docs = await db.collection(c.name).find(query).limit(mongo.limit || 1000).toArray();
+	console.debug('query', query);
+	console.debug('number of docs', docs.length);
 	if (docs.length) {
 		console.log('Updating ' + c.name + '. Iteration: ' + cnt + '. Docs: ' + docs.length);
 		const body = docs.reduce((x, d) => ([...x, {update: {_id: d._id}}, {doc: deleteId((c.transform || transform)(d))}]), []);
 		const updatedAt = docs[docs.length - 1][uKey];
+		console.debug('bulk insert');
 		await ec.bulk({index, type, body});
+		console.debug('update timestamp in the elastic\'s syncDataIndex');
 		await ec.update({index: esIndex, type: esIndex, id: c.name, body: {
 			script: {
 				inline: 'ctx._source.updatedAt = params.updatedAt',
@@ -121,7 +131,7 @@ async function main() {
 			console.error(e);
 		}
 	}
-	console.log('Exiting');
+	console.log('Finished!');
 	mc.close();
 }
 
