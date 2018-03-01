@@ -29,6 +29,7 @@ if (!mongo || !es) {
 	return;
 }
 
+const limit = mongo.limit || 1000;
 const esIndex = es.syncDataIndex || 'm2e-synced-till';
 
 
@@ -63,7 +64,7 @@ async function sync(db, ec, collection) {
 
 	// new docs - start from 7 days before to ensure everything has been synced
 	let query = cnt === 1 && resync ? {} : till.createdAt ? {[cKey]: {$gt: new Date(new Date(till.createdAt).setHours(-24 * 7, 0, 0, 0))}} : {};
-	let docs = await db.collection(c.name).find(query).limit(mongo.limit || 1000).toArray();
+	let docs = await db.collection(c.name).find(query).limit(limit).toArray();
 	let totalDocs = await db.collection(c.name).count(query, {_id: 1});
 	console.debug('query', query);
 	console.debug('number of docs', docs.length);
@@ -84,7 +85,7 @@ async function sync(db, ec, collection) {
 			},
 			upsert: {createdAt, updatedAt: createdAt}
 		}});
-		if (totalDocs > 1000) {
+		if (totalDocs > limit) {
 			cnt++;
 			console.debug('.... more data');
 			await sync(db, ec, collection);
@@ -102,7 +103,7 @@ async function sync(db, ec, collection) {
 	till = statusDoc._source;
 
 	query = till.updatedAt ? {[uKey]: {$gt: new Date(new Date(till.updatedAt).setHours(-24 * 7, 0, 0, 0))}} : {};
-	docs = await db.collection(c.name).find(query).limit(mongo.limit || 1000).toArray();
+	docs = await db.collection(c.name).find(query).limit(limit).toArray();
 	totalDocs = await db.collection(c.name).count(query, {_id: 1});
 	console.debug('query', query);
 	console.debug('number of docs', docs.length);
@@ -119,7 +120,7 @@ async function sync(db, ec, collection) {
 				params: {updatedAt}
 			}
 		}});
-		if (totalDocs > 1000) await sync(db, ec, collection, cnt++);
+		if (totalDocs > limit) await sync(db, ec, collection, cnt++);
 	}
 	else cnt = 1;
 }
