@@ -61,12 +61,14 @@ async function sync(db, ec, collection) {
 	let statusDoc = statusDocExists ? await ec.get({index: esIndex, type: esIndex, id: c.name}) : null;
 	let till = statusDoc ? statusDoc._source : {};
 
-	// new docs
-	let query = cnt === 1 && resync ? {} : till.createdAt ? {[cKey]: {$gt: new Date(till.createdAt)}} : {};
+	// new docs - start from 7 days before to ensure everything has been synced
+	let query = cnt === 1 && resync ? {} : till.createdAt ? {[cKey]: {$gt: new Date(new Date(till.createdAt).setHours(-24 * 7, 0, 0, 0))}} : {};
 	let docs = await db.collection(c.name).find(query).limit(mongo.limit || 1000).toArray();
 	console.debug('query', query);
 	console.debug('number of docs', docs.length);
 	if (docs.length) {
+		console.log('');
+		console.log('');
 		console.log('--------------------');
 		console.log('Fetching ' + c.name + '. Iteration: ' + cnt + '. Docs: ' + docs.length);
 		const body = docs.reduce((x, d) => ([...x, {create: {_id: d._id}}, {...(c.transform || transform)(deleteId(d))}]), []);
