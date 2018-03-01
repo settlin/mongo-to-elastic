@@ -67,6 +67,7 @@ async function sync(db, ec, collection) {
 	console.debug('query', query);
 	console.debug('number of docs', docs.length);
 	if (docs.length) {
+		console.log('--------------------');
 		console.log('Fetching ' + c.name + '. Iteration: ' + cnt + '. Docs: ' + docs.length);
 		const body = docs.reduce((x, d) => ([...x, {create: {_id: d._id}}, {...(c.transform || transform)(deleteId(d))}]), []);
 		const createdAt = body[body.length - 1][cKey];
@@ -82,7 +83,7 @@ async function sync(db, ec, collection) {
 		}});
 		if (createdAt < new Date()) {
 			cnt++;
-			console.debug('fetching more data');
+			console.debug('.... more data');
 			await sync(db, ec, collection);
 			return;
 		}
@@ -91,7 +92,7 @@ async function sync(db, ec, collection) {
 
 	// updated docs
 	if (!statusDocExists) return;
-	console.debug('updating documents');
+	console.debug('..... Updating');
 	cnt = 1;
 	const uKey = c.updatedAtKey || 'updatedAt';
 	statusDoc = await ec.get({index: esIndex, type: esIndex, id: c.name});
