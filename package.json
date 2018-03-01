@@ -25,7 +25,8 @@
     "config": "^1.29.4",
     "elasticsearch": "^14.1.0",
     "mongo-oplog": "^2.1.0",
-    "mongodb": "^3.0.3"
+    "mongodb": "^3.0.3",
+    "pino": "^4.13.0"
   },
   "devDependencies": {
     "babel-eslint": "^8.2.2",
