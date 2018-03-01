@@ -1,3 +1,11 @@
+const pino = require('pino');
+const pretty = pino.pretty();
+pretty.pipe(process.stdout);
+const log = pino({
+	name: 'm2e',
+	safe: true
+}, pretty);
+
 console.log('\n\n\n=============');
 console.log('=============');
 console.log(new Date());
@@ -6,7 +14,7 @@ console.log('=============');
 const config = process.argv[2];
 const resync = process.argv[3] === 'resync';
 if (!config) {
-	console.error('Please give a config js file');
+	log.error('Please give a config js file');
 	return;
 }
 
@@ -16,19 +24,21 @@ const requireFile = file => {
 		return require(file.indexOf('/') === 0 ? file : './' + file);
 	}
 	catch (e) {
-		console.error(e);
+		log.error(e);
 	}
 	return {};
 };
 
 const {MongoClient} = require('mongodb');
 const elasticsearch = require('elasticsearch');
+
 const {mongo, es} = requireFile(config);
 if (!mongo || !es) {
-	console.error('Please give a valid config js file');
+	log.error('Please give a valid config js file');
 	return;
 }
 
+const limit = mongo.limit || 1000;
 const esIndex = es.syncDataIndex || 'm2e-synced-till';
 
 
@@ -63,19 +73,20 @@ async function sync(db, ec, collection) {
 
 	// new docs - start from 7 days before to ensure everything has been synced
 	let query = cnt === 1 && resync ? {} : till.createdAt ? {[cKey]: {$gt: new Date(new Date(till.createdAt).setHours(-24 * 7, 0, 0, 0))}} : {};
-	let docs = await db.collection(c.name).find(query).limit(mongo.limit || 1000).toArray();
-	console.debug('query', query);
-	console.debug('number of docs', docs.length);
+	let docs = await db.collection(c.name).find(query).limit(limit).toArray();
+	let totalDocs = await db.collection(c.name).count(query, {_id: 1});
+	log.debug('query', query);
+	log.debug('number of docs', docs.length);
 	if (docs.length) {
-		console.log('');
-		console.log('');
-		console.log('--------------------');
-		console.log('Fetching ' + c.name + '. Iteration: ' + cnt + '. Docs: ' + docs.length);
+		log.info('');
+		log.info('');
+		log.info('--------------------');
+		log.info('Fetching ' + c.name + '. Iteration: ' + cnt + '. Docs: ' + docs.length);
 		const body = docs.reduce((x, d) => ([...x, {create: {_id: d._id}}, {...(c.transform || transform)(deleteId(d))}]), []);
 		const createdAt = body[body.length - 1][cKey];
-		console.debug('bulk insert');
+		log.debug('bulk insert');
 		await ec.bulk({index, type: 't', body});
-		console.debug('update timestamp in the elastic\'s syncDataIndex');
+		log.debug('update timestamp in the elastic\'s syncDataIndex');
 		await ec.update({index: esIndex, type: esIndex, id: c.name, body: {
 			script: {
 				inline: 'ctx._source.createdAt = params.createdAt; if (!params.collectionIndExists) ctx._source.updatedAt = params.createdAt',
@@ -83,9 +94,9 @@ async function sync(db, ec, collection) {
 			},
 			upsert: {createdAt, updatedAt: createdAt}
 		}});
-		if (createdAt < new Date()) {
+		if (totalDocs > limit) {
 			cnt++;
-			console.debug('.... more data');
+			log.debug('.... more data');
 			await sync(db, ec, collection);
 			return;
 		}
@@ -94,30 +105,31 @@ async function sync(db, ec, collection) {
 
 	// updated docs
 	if (!statusDocExists) return;
-	console.debug('..... Updating');
+	log.debug('..... Updating');
 	cnt = 1;
 	const uKey = c.updatedAtKey || 'updatedAt';
 	statusDoc = await ec.get({index: esIndex, type: esIndex, id: c.name});
 	till = statusDoc._source;
 
-	query = till.updatedAt ? {[uKey]: {$gt: new Date(till.updatedAt)}} : {};
-	docs = await db.collection(c.name).find(query).limit(mongo.limit || 1000).toArray();
-	console.debug('query', query);
-	console.debug('number of docs', docs.length);
+	query = till.updatedAt ? {[uKey]: {$gt: new Date(new Date(till.updatedAt).setHours(-24 * 7, 0, 0, 0))}} : {};
+	docs = await db.collection(c.name).find(query).limit(limit).toArray();
+	totalDocs = await db.collection(c.name).count(query, {_id: 1});
+	log.debug('query', query);
+	log.debug('number of docs', docs.length);
 	if (docs.length) {
-		console.log('Updating ' + c.name + '. Iteration: ' + cnt + '. Docs: ' + docs.length);
+		log.info('Updating ' + c.name + '. Iteration: ' + cnt + '. Docs: ' + docs.length);
 		const body = docs.reduce((x, d) => ([...x, {update: {_id: d._id}}, {doc: deleteId((c.transform || transform)(d))}]), []);
 		const updatedAt = docs[docs.length - 1][uKey];
-		console.debug('bulk insert');
+		log.debug('bulk insert');
 		await ec.bulk({index, type, body});
-		console.debug('update timestamp in the elastic\'s syncDataIndex');
+		log.debug('update timestamp in the elastic\'s syncDataIndex');
 		await ec.update({index: esIndex, type: esIndex, id: c.name, body: {
 			script: {
 				inline: 'ctx._source.updatedAt = params.updatedAt',
 				params: {updatedAt}
 			}
 		}});
-		if (updatedAt < new Date()) await sync(db, ec, collection, cnt++);
+		if (totalDocs > limit) await sync(db, ec, collection, cnt++);
 	}
 	else cnt = 1;
 }
@@ -131,10 +143,10 @@ async function main() {
 			await sync(db, ec, c);
 		}
 		catch (e) {
-			console.error(e);
+			log.error(e);
 		}
 	}
-	console.log('Finished!');
+	log.info('Finished!');
 	mc.close();
 }
 
