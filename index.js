@@ -1,10 +1,9 @@
+const pinoDebug = require('pino-debug');
 const pino = require('pino');
-const pretty = pino.pretty();
+const pretty = pino.pretty();                 
 pretty.pipe(process.stdout);
-const log = pino({
-	name: 'm2e',
-	safe: true
-}, pretty);
+const log = pino({level: process.env.LEVEL || 'info', name: 'm2e', safe: true}, pretty);
+pinoDebug(log, {});
 
 console.log('\n\n\n=============');
 console.log('=============');
@@ -72,10 +71,14 @@ async function sync(db, ec, collection) {
 	let till = statusDoc ? statusDoc._source : {};
 
 	// new docs - start from 7 days before to ensure everything has been synced
-	let query = cnt === 1 && resync ? {} : till.createdAt ? {[cKey]: {$gt: new Date(new Date(till.createdAt).setHours(-24 * 7, 0, 0, 0))}} : {};
-	let docs = await db.collection(c.name).find(query).limit(limit).toArray();
-	let totalDocs = await db.collection(c.name).count(query, {_id: 1});
+	let query = cnt === 1 && resync ? {} : till.createdAt ? {[cKey]: {$gte: new Date(till.createdAt)}} : {};
 	log.debug('query', query);
+	let docs = await db.collection(c.name).find(query).limit(limit).toArray();
+	if (docs.length && cnt > 1 && Math.abs(docs[docs.length - 1][cKey].getTime() - new Date(till.createdAt).getTime()) <= 1000) {
+		log.debug('skipping', limit);
+		docs = await db.collection(c.name).find(query).skip(limit).limit(limit).toArray();
+	}
+	let totalDocs = await db.collection(c.name).count(query, {_id: 1});
 	log.debug('number of docs', docs.length);
 	if (docs.length) {
 		log.info('');
@@ -83,10 +86,11 @@ async function sync(db, ec, collection) {
 		log.info('--------------------');
 		log.info('Fetching ' + c.name + '. Iteration: ' + cnt + '. Docs: ' + docs.length);
 		const body = docs.reduce((x, d) => ([...x, {create: {_id: d._id}}, {...(c.transform || transform)(deleteId(d))}]), []);
-		const createdAt = body[body.length - 1][cKey];
+		let createdAt = body[body.length - 1][cKey];
+		// if (Math.abs(createdAt.getTime() - new Date(till.createdAt).getTime()) < 86400000 && cnt > 1) createdAt = new Date(new Date(till.updatedAt).setHours(24));		
 		log.debug('bulk insert');
 		await ec.bulk({index, type: 't', body});
-		log.debug('update timestamp in the elastic\'s syncDataIndex');
+		log.debug('update timestamp in the elastic\'s syncDataIndex', createdAt);
 		await ec.update({index: esIndex, type: esIndex, id: c.name, body: {
 			script: {
 				inline: 'ctx._source.createdAt = params.createdAt; if (!params.collectionIndExists) ctx._source.updatedAt = params.createdAt',
@@ -106,23 +110,27 @@ async function sync(db, ec, collection) {
 	// updated docs
 	if (!statusDocExists) return;
 	log.debug('..... Updating');
-	cnt = 1;
 	const uKey = c.updatedAtKey || 'updatedAt';
 	statusDoc = await ec.get({index: esIndex, type: esIndex, id: c.name});
 	till = statusDoc._source;
 
-	query = till.updatedAt ? {[uKey]: {$gt: new Date(new Date(till.updatedAt).setHours(-24 * 7, 0, 0, 0))}} : {};
+	query = till.updatedAt ? {[uKey]: {$gte: new Date(till.updatedAt)}} : {};
 	docs = await db.collection(c.name).find(query).limit(limit).toArray();
+	if (docs.length && cnt > 1 && Math.abs(docs[docs.length - 1][uKey].getTime() - new Date(till.updatedAt).getTime()) <= 1000) {
+		log.debug('skipping', limit);
+		docs = await db.collection(c.name).find(query).skip(limit).limit(limit).toArray();
+	}
 	totalDocs = await db.collection(c.name).count(query, {_id: 1});
 	log.debug('query', query);
 	log.debug('number of docs', docs.length);
 	if (docs.length) {
 		log.info('Updating ' + c.name + '. Iteration: ' + cnt + '. Docs: ' + docs.length);
 		const body = docs.reduce((x, d) => ([...x, {update: {_id: d._id}}, {doc: deleteId((c.transform || transform)(d))}]), []);
-		const updatedAt = docs[docs.length - 1][uKey];
+		let updatedAt = docs[docs.length - 1][uKey];
+		// if (Math.abs(updatedAt.getTime() - new Date(till.updatedAt).getTime()) < 86400000 && cnt > 1) updatedAt = new Date(new Date(till.updatedAt).setHours(24));
 		log.debug('bulk insert');
 		await ec.bulk({index, type, body});
-		log.debug('update timestamp in the elastic\'s syncDataIndex');
+		log.debug('update timestamp in the elastic\'s syncDataIndex', updatedAt);
 		await ec.update({index: esIndex, type: esIndex, id: c.name, body: {
 			script: {
 				inline: 'ctx._source.updatedAt = params.updatedAt',
